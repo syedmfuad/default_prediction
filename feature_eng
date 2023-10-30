@@ -415,7 +415,6 @@ table(y_test)
 #LOGISTIC REGRESSION 
 
 
-#install.packages(c("caret", "glmnet"))
 library(caret)
 library(glmnet)
 
@@ -427,7 +426,6 @@ kfold <- trainControl(method = "cv", number = 3, verboseIter = TRUE) # Replace '
 alpha_values <- c(0, 1)  # 0 for lasso ('l1') and 1 for ridge ('l2')
 lambda_values <- c(10**-5, 10**-1, 10**2)
 grid_sgdlr <- expand.grid(alpha = alpha_values, lambda = lambda_values)
-
 
 # Convert y_train to a factor with two levels
 y_train <- as.numeric(factor(y_train, levels = c(2, 1))) - 1
@@ -511,7 +509,6 @@ best_params <- fit_rf$bestTune
 cat('Best parameters set: \n')
 print(best_params)
 
-
 # Extract feature importances from the model
 feature_importances <- rf_estimator$importance
 
@@ -520,7 +517,6 @@ sorted_importances <- feature_importances[order(-feature_importances[, "MeanDecr
 
 cat("Features sorted by their score: Top 10\n")
 head(sorted_importances, 10)
-
 
 library(ggplot2)
 
@@ -539,11 +535,7 @@ ggplot(top_10, aes(x = reorder(feature, importance), y = importance)) +
   theme_minimal()
 
 
-
-
-
 #KNN 
-
 
 
 library(caret)
@@ -622,8 +614,8 @@ ggplot(auroc_res, aes(x = AUROC, y = reorder(Algorithm, AUROC))) +
   theme_minimal()
 
 
-
 #HYPERPARAMETER FOR LOGISTIC REGRESSION 
+
 
 library(caret)
 library(glmnet) # for logistic regression with L1 and L2 regularization
@@ -662,7 +654,7 @@ cat('Best parameters set: \n')
 print(best_params_hyper)
 
 
-#TEST SET 
+#VALIDATION  
 
 
 library(pROC) # for roc function
@@ -677,8 +669,6 @@ score <- auc(roc_result)
 
 # Print the ROC AUC score
 cat('Logistic Regression roc_auc score:', score, '\n')
-
-
 
 # Convert both vectors to factors
 y_pred_factor <- as.factor(y_pred)
@@ -712,405 +702,6 @@ F1 <- 2 * (precision * recall) / (precision + recall)
 cat("Precision:", precision, "\n")
 cat("Recall:", recall, "\n")
 cat("F1 Score:", F1, "\n")
-
-
-
-
-
-
-
-
-
-
-
-
-
-library(caret)
-library(ROCR)
-library(glmnet)
-
-set.seed(42)
-
-# Create a logistic regression model
-model <- glmnet(x=X_train, y=y_train, alpha=1, family="binomial")
-
-# Define the grid of hyperparameters
-param_grid <- expand.grid(alpha=1, lambda=c(10^-5, 10^-1, 10^2))
-
-# Create a trainControl object for cross-validation
-ctrl <- trainControl(method="cv", number=3, summaryFunction=twoClassSummary, classProbs=TRUE, verboseIter=TRUE)
-
-# Train the model using cross-validation
-fit <- train(Charged_Off ~ ., data=data2_train, method="glmnet", trControl=ctrl, tuneGrid=param_grid, 
-             metric="ROC")
-
-# Print the results
-print(fit)
-
-# Get the best model
-best_model <- fit$finalModel
-#print(best_model)
-
-# Print the best ROC AUC score and best parameters
-cat("Best ROC AUC:", fit$results$ROC, "\n")
-#cat("Best Parameters:", fit$bestTune, "\n")
-
-yh_xgb=predict(fit, newdata = X_test)
-cm<-confusionMatrix(as.factor(y_test),yh_xgb)
-print(cm)
-ggplot(fit)
-
-
-
-
-
-
-
-
-
-library(randomForest)
-
-set.seed(42)
-
-
-# Create a Random Forest classifier with specified parameters
-rf <- randomForest(as.factor(y_train) ~ ., data = X_train, ntree = 50, mtry = sqrt(ncol(X_train)), class.weights = c("0" = 1, "1" = 1))
-
-# Print the results of the Random Forest model
-print(rf)
-
-# Predict on the test set
-y_pred <- predict(rf, newdata = X_test)
-
-# Convert factor to numeric
-y_pred_numeric <- as.numeric(as.character(y_pred))
-
-cm<-confusionMatrix(as.factor(data2_test$Charged_Off),as.factor(y_pred))
-cm
-
-# Evaluate the model (ROC AUC)
-roc_obj <- roc(y_test, y_pred_numeric)
-auc_value <- auc(roc_obj)
-cat("ROC AUC:", auc_value, "\n")
-
-
-
-
-
-
-
-
-
-
-
-
-kfold=5
-
-# Define the grid of hyperparameters
-param_grid_rf <- expand.grid(
-  ntree = c(50),  # The number of randomized trees to build
-  .mtry = c(sqrt(ncol(X_train))),  # Number of features to consider for each split
-  class.weights = list("0" = 1, "1" = 1)  # Class weights for balancing
-)
-
-# Create a trainControl object for cross-validation
-ctrl <- trainControl(method = "cv", number = kfold, summaryFunction = twoClassSummary, classProbs = TRUE, verboseIter = TRUE)
-
-# Train the model using cross-validation
-fit <- train(y_train ~ ., data = X_train, method = "rf", trControl = ctrl, tuneGrid = param_grid_rf, metric = "ROC")
-
-# Print the results
-print(fit)
-
-# Get the best model
-best_model <- fit$finalModel
-
-# Print the best ROC AUC score and best parameters
-cat("Best ROC AUC:", fit$results$ROC, "\n")
-cat("Best Parameters:", fit$bestTune, "\n")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#XGBoost
-start_t<-Sys.time()
-train_control <- caret::trainControl(method = "cv", number = 10, savePredictions = "final")
-xgb_grid = expand.grid(nrounds = c(60,120), max_depth = c(1,9), min_child_weight =1, 
-                       subsample = 1, gamma = 0, colsample_bytree = 0.8, eta = c(.01,.1) )
-xgb.model = train(Charged_Off~., data=data2_train,
-                  method = "xgbTree",
-                  trControl = train_control,
-                  tuneGrid = xgb_grid)
-yh_xgb=predict(xgb.model, newdata = data2_test)
-cm<-confusionMatrix(as.factor(data2_test$Charged_Off),yh_xgb)
-print(cm)
-ggplot(xgb.model)
-results<-c(results,"XGB",cm$overall["Accuracy_xgb"],cm$byClass["Sensitivity_xgb"],
-           cm$byClass["Specificity_xgb"],Sys.time()-start_t)
-
-varImp(xgb.model)
-plot(varImp(xgb.model))
-
-gg<-ggplot(data=varImp(xgb.model), aes(x=Overall, y=yh_xgb,colour="blue")) +
-  geom_bar(stat="identity")
-gg
-
-############################
-
-#knn
-
-train_control <- trainControl(method = "cv", number = 10, savePredictions = "final")
-
-
-knn_grid <- expand.grid(k=c(2:15)) 
-
-
-results<-c() # i'll store the results in this list
-start_t <- Sys.time()
-knn.model <- train(Charged_Off~.,
-                   method = "knn",
-                   data=data2_train,
-                   trControl = train_control,
-                   tuneGrid = knn_grid)
-yhat_knn=predict(knn.model, newdata = data2)
-end_t <- Sys.time()
-
-cm <- confusionMatrix(as.factor(testing$default_num),yhat_knn[-intrain])
-
-results<-c(results,"knn",cm$overall["Accuracy_knn"],cm$byClass["Sensitivity_knn"],
-           cm$byClass["Specificity_knn"],end_t-start_t)
-
-library(caret)
-library(ggplot2)
-
-ggplot(knn.model)
-knn.model$finalModel
-varImp(knn.model)
-plot(varImp(knn.model))
-k<-ggplot(data=varImp(knn.model), aes(x=Overall, y=yhat_knn,colour="blue")) +
-  geom_bar(stat="identity")
-k
-
-######################################################
-#randomforest
-
-# define a grid of parameter options to try with ranger
-rf_grid <- expand.grid(mtry = c(3:6),
-                       splitrule = "gini",   #or variance
-                       min.node.size = c(2,4))
-rf_grid
-#rf_grid fit the model with the parameter grid
-
-x=training[,c("installment", "annual_inc", "total_pymnt",
-              "funded_amnt", "loan_amnt", "int_rate" ,"total_acc", "recoveries", "last_pymnt_amnt",
-              "term", "emp_length", "grade", "home_ownership", "purpose", "revol_bal", "verification_status",
-              "delinq_2yrs", "share", "fico_avg", "loan_to_total")]
-y=as.factor(training$default_num)
-
-#RF Model
-library(ranger)
-start_t <- Sys.time()
-rf.model <- train(x = x,y = y,
-                  method = "ranger",
-                  trControl = train_control,
-                  tuneGrid = rf_grid,
-                  importance= "impurity") #or impurity_corrected, or permutation for continuous y
-yhat_rf=predict(rf.model, newdata = data2)
-#yhat_rf[-intrain]
-cm<-confusionMatrix(as.factor(testing$default_num),yhat_rf[-intrain])
-results<-c(results,"rf",cm$overall["Accuracy_rf"],cm$byClass["Sensitivity_rf"],
-           cm$byClass["Specificity_rf"],Sys.time()-start_t)
-results
-ggplot(rf.model)
-
-varImp(rf.model)
-
-r<-ggplot(data=varImp(rf.model), aes(x=Overall, y=yhat_rf,colour="blue")) +
-  geom_bar(stat="identity")
-r
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# model = lrm(Charged_Off ~ ., data2)
-
-library(neuralnet)
-set.seed(7896129)
-
-data_train_new <- data.frame(y_train, X_train_scaled) 
-data_train_new <- dplyr::sample_n(data_train_new, size=1000)
-
-nmodel <- neuralnet(y_train ~ .,data=data_train_new,hidden=1,
-                    threshold = 0.01,
-                    learningrate.limit = NULL,
-                    learningrate.factor =
-                      list(minus = 0.5, plus = 1.2),
-                    algorithm = "rprop+")
-
-n <- neuralnet(y_train ~ .,
-               data = data_train_new,
-               hidden = 5,
-               err.fct = "ce",
-               linear.output = FALSE,
-               lifesign = 'full',
-               rep = 2,
-               algorithm = "rprop+",
-               stepmax = 100000)
-
-plot(n, rep = 1)
-
-# Prediction
-output <- compute(n, rep = 1, data_train_new[, -1])
-head(output$net.result)
-
-head(data_train_new[1, ])
-
-# confusion Matrix $Misclassification error -Training data
-output <- compute(n, rep = 1, data_train_new[, -1])
-p1 <- output$net.result
-pred1 <- ifelse(p1 > 0.5, 1, 0)
-tab1 <- table(pred1[,1], data_train_new$y_train)
-tab1
-
-
-
-genData = smotefamily::ADAS(data_train_new[,-1],data_train_new[,1], K=5)
-#genData_2 = ADAS(data_example[,-3],data_example[,3],K=7)
-
-table(genData$data$class)
-
-
-
-
-newdata <- genData$data
-
-nmodel <- neuralnet(class ~ .,data=newdata,hidden=1,
-                    threshold = 0.01,
-                    learningrate.limit = NULL,
-                    learningrate.factor =
-                      list(minus = 0.5, plus = 1.2),
-                    algorithm = "rprop+")
-
-n <- neuralnet(class ~ .,
-               data = newdata,
-               hidden = 5,
-               err.fct = "ce",
-               linear.output = FALSE,
-               lifesign = 'full',
-               rep = 2,
-               algorithm = "rprop+",
-               stepmax = 100000)
-
-plot(n, rep = 1)
-
-# Prediction
-output <- compute(n, rep = 1, newdata[, -122])
-head(output$net.result)
-
-head(newdata[1, ])
-
-# confusion Matrix $Misclassification error -Training data
-output <- compute(n, rep = 1, newdata[, -122])
-p1 <- output$net.result
-pred1 <- ifelse(p1 > 0.5, 1, 0)
-tab1 <- table(pred1[,1], newdata$class)
-tab1
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-svm1 = svm(as.factor(class)~.,
-           data = newdata,
-           kernel = "radial",
-           cost = 1,
-           gamma = 1)
-svm1
-
-#predictions
-pred_svm1 = predict(svm1, newdata=newdata)
-#svm1 is a vector
-#matrix
-table(pred_svm1, newdata$class)
-
-
-
-
 
 
 
