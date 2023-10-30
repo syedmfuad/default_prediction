@@ -1,0 +1,1163 @@
+
+
+#MADE A BIG CHANGE: 
+
+#CHANGED THIS y_train <- factor(y_train, levels = c(0, 1), labels = c("Class0", "Class1"))
+
+#TO y_train <- factor(y_train, levels = c(0, 1), labels = c("Class1", "Class0"))
+
+rm(list=ls())
+
+setwd("C:/Users/syedm/Desktop/Virtualenv")
+
+set.seed(12345)
+library(caret)
+data1<-read.csv("data1.csv")
+
+#remove NA
+data2 <- data1
+
+table(data2$loan_status)
+
+data2$date_str <- paste0(data2$issue_d, "-01")  # Add a day (e.g., "01-") to the date string
+data2$date_str <- paste0("20", data2$date_str)  # Add a day (e.g., "01-") to the date string
+data2$date <- as.Date(data2$date_str, format = "%Y-%b-%d")  # Convert to Date format
+data2 <- data2[order(data2$date), ] 
+
+data2$fico_score <- rowMeans(data2[, c("fico_range_high", "fico_range_low")])
+
+#removing NAs in selected variables
+
+
+myvars <- c("loan_status", "loan_amnt", "term", "int_rate", "installment", "sub_grade", "emp_length", "home_ownership", 
+            "annual_inc", "verification_status", "date", "purpose", "addr_state", "dti", #"earliest_cr_line", 
+            "open_acc", "pub_rec", "revol_bal", "revol_util", "total_acc", "initial_list_status", "application_type", 
+            "mo_sin_old_il_acct", "mo_sin_old_rev_tl_op", "mort_acc", "pub_rec_bankruptcies", 
+            "fico_score") 
+
+data2 <- data2[, myvars]
+
+data2 <- data2[complete.cases(data2),]
+data2$loan_status <- as.factor(data2$loan_status)
+
+summary(data2$loan_status)
+
+
+#FEATURE ENGINEERING 
+
+
+data2$term <- as.factor(data2$term)
+
+data2$term <- as.integer(gsub("\\D+", "", data2$term))
+
+# Replace values in 'emp_length' column
+data2$emp_length <- ifelse(data2$emp_length == "10+ years", "10 years", data2$emp_length)
+data2$emp_length <- ifelse(data2$emp_length == "< 1 year", "0 years", data2$emp_length)
+
+# Get value counts and sort by index
+value_counts <- table(data2$emp_length)
+sorted_counts <- sort(value_counts, index.return = TRUE)
+
+# Print value counts
+print(sorted_counts)
+
+# Extract numeric part, get value counts, and sort by index
+data2$emp_length <- as.numeric(sapply(strsplit(as.character(data2$emp_length), " "), "[", 1))
+value_counts <- table(data2$emp_length, useNA = "always")
+sorted_counts <- sort(value_counts, index.return = TRUE)
+
+# Print value counts
+print(sorted_counts)
+
+# Sample 5 rows
+sample_rows <- sample(data2$emp_length, 5)
+print(sample_rows)
+
+# Convert 'loan_status' column to a 0/1 "Charged_Off" column
+data2$Charged_Off <- as.numeric(data2$loan_status == "Charged Off")
+
+# Drop the 'loan_status' column
+data2 <- data2[, !names(data2) %in% "loan_status"]
+
+data2 <- data2[complete.cases(data2),]
+
+data2$Charged_Off <- as.factor(data2$Charged_Off) 
+
+data2$Charged_Off <- factor(data2$Charged_Off, 
+                  levels = c(0, 1), 
+                  labels = c("False", "True"))
+
+
+#CORRELATION MATRIX PLOT 
+
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+
+str(data2)
+
+data2$Charged_Off <- as.numeric(data2$Charged_Off)
+
+
+# Assuming df is your data frame
+list_float <- data2 %>% select_if(is.numeric) %>% names()
+
+# Create the correlation matrix
+cor_matrix <- cor(data2[, list_float])
+
+# Melt the matrix to use it with ggplot2
+melted_cor_matrix <- melt(cor_matrix)
+
+# Plot the heatmap
+ggplot(data = melted_cor_matrix, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = sprintf("%.2f", value)), vjust = 1) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab",
+                       name="Pearson\nCorrelation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1),
+        axis.text.y = element_text(size = 12)) +
+  coord_fixed()
+
+
+
+
+
+#REMOVE HIGHLY CORRELATED VARIABLES 
+
+cor_matrix <- cor(data2[, list_float])
+
+cor_matrix[upper.tri(cor_matrix, diag = TRUE)] <- 0
+
+cor_melted <- as.data.frame(as.table(cor_matrix))
+
+filtered_cor <- subset(cor_melted, abs(Freq) > 0.1 & Freq != 0)
+
+
+#CHECK FOR MISSING VALUES 
+
+
+# Check for missing values in specific columns
+missing_values <- is.na(data2[, c("installment", "loan_amnt", "mo_sin_old_rev_tl_op", "total_acc", "open_acc", "pub_rec_bankruptcies", "pub_rec")])
+col_missing <- colSums(missing_values)
+
+# Compute Pearson coefficients for all columns in list_float
+list_float <- colnames(data2)[sapply(data2, is.numeric)] # assuming list_float is all numeric columns in df
+pearson_corr <- sapply(list_float, function(col) cor(data2[[col]], data2$Charged_Off, use = "complete.obs"))
+
+# Create a dataframe for the results
+linear_corr <- data.frame(variable = names(pearson_corr), pearson_corr = as.numeric(pearson_corr))
+
+# Calculate absolute values of the correlation coefficients
+linear_corr$abs_pearson_corr <- abs(linear_corr$pearson_corr)
+
+# Sort by the absolute correlation values and format the dataframe
+linear_corr <- linear_corr[order(-linear_corr$abs_pearson_corr), ]
+linear_corr <- subset(linear_corr, variable != "Charged_Off")
+linear_corr <- linear_corr[, c("variable", "pearson_corr")]
+
+linear_corr
+
+
+
+#DROP CORRELATED VARIABLES 
+
+#df <- df[, setdiff(names(df), list_linear)]
+
+
+#CREATE DUMMIES FROM CATEGORICAL 
+
+
+#create dummies for categorical variables 
+dummy_list <- c('sub_grade', 'home_ownership', 'verification_status', 'purpose', 'addr_state', 'initial_list_status', 'application_type')
+
+dummy_vars <- dummyVars(~ ., data = data2[, dummy_list], levelsOnly = TRUE)
+
+df_dummies <- as.data.frame(predict(dummy_vars, newdata = data2[, dummy_list]))
+
+data2 <- cbind(data2, df_dummies)
+
+data2 <- data2[, -which(names(data2) %in% dummy_list)]
+
+colnames(data2)
+
+data2$application_typeJoint_App <- sub(" ", "_", data2$`application_typeJoint App`)
+data2$application_typeJoint_App <- as.numeric(data2$application_typeJoint_App)
+
+data2$verification_statusNot_Verified <- sub(" ", "_", data2$`verification_statusNot Verified`)
+data2$verification_statusNot_Verified <- as.numeric(data2$verification_statusNot_Verified)
+
+data2$verification_statusSource_Verified <- sub(" ", "_", data2$`verification_statusSource Verified`)
+data2$verification_statusSource_Verified <- as.numeric(data2$verification_statusSource_Verified)
+
+data2$`application_typeJoint App` <- NULL 
+data2$`verification_statusNot Verified`<- NULL 
+data2$`verification_statusSource Verified`<- NULL 
+
+
+#TEST AND TRAIN DATA 
+
+
+#train and test by date 
+
+# Convert 'issue_d' to numeric (days since a reference date)
+data2$date_numeric <- as.numeric(data2$date - min(data2$date))
+
+# Calculate the quantile value
+quantile_value <- quantile(data2$date_numeric, 0.70)
+
+# Create the train and test partitions
+data2_train <- data2[data2$date_numeric < quantile_value, ]
+data2_test <- data2[data2$date_numeric >= quantile_value, ]
+
+# Calculate the number of loans in each partition
+total_loans <- nrow(data2_train) + nrow(data2_test)
+total_loans_in_full_dataset <- nrow(data2)
+
+# Print the results
+cat("Number of loans in the partition:", total_loans, "\n")
+cat("Number of loans in the full dataset:", total_loans_in_full_dataset, "\n")
+
+table(data2_train$Charged_Off)
+table(data2_test$Charged_Off)
+
+
+
+
+
+
+
+#train and test randomly 
+
+## 75% of the sample size
+smp_size <- floor(0.80 * nrow(data2))
+## set the seed to make your partition reproducible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(data2)), size = smp_size)
+data2_train <- data2[train_ind, ]
+data2_test <- data2[-train_ind, ]
+# Calculate the number of loans in each partition
+total_loans <- nrow(data2_train) + nrow(data2_test)
+total_loans_in_full_dataset <- nrow(data2)
+# Print the results
+cat("Number of loans in the partition:", total_loans, "\n")
+cat("Number of loans in the full dataset:", total_loans_in_full_dataset, "\n")
+table(data2_train$Charged_Off)
+table(data2_test$Charged_Off)
+
+
+
+
+
+# Drop the 'issue_d' column
+
+data2 <- data2[, !names(data2) %in% "date"]
+
+data2 <- data2[, !names(data2) %in% "date_numeric"]
+
+
+data2_train <- data2_train[, !names(data2_train) %in% "date"]
+data2_test <- data2_test[, !names(data2_test) %in% "date"]
+
+data2_train <- data2_train[, !names(data2_train) %in% "date_numeric"]
+data2_test <- data2_test[, !names(data2_test) %in% "date_numeric"]
+
+# Create X_train, y_train, X_test, and y_test
+X_train <- data2_train[, !names(data2_train) %in% "Charged_Off"]
+y_train <- data2_train$Charged_Off
+
+X_test <- data2_test[, !names(data2_test) %in% "Charged_Off"]
+y_test <- data2_test$Charged_Off
+
+str(X_train, list.len=ncol(X_train))
+
+table(data2_train$Charged_Off)
+table(data2_test$Charged_Off)
+
+
+#FEATURE SCALING 
+
+
+original_column_names <- colnames(X_train)
+
+# Scale the training data
+scaled_train <- scale(X_train)
+X_train <- as.data.frame(scaled_train)
+
+# Use the mean and standard deviation from the training data to scale the test data
+scaled_test <- scale(X_test, center = attr(scaled_train, "scaled:center"), scale = attr(scaled_train, "scaled:scale"))
+X_test <- as.data.frame(scaled_test)
+
+# Set column names (assuming original column names are stored)
+colnames(X_train) <- colnames(X_test) <- original_column_names
+
+
+
+
+
+
+# Train the StandardScaler on the training features and apply it to both training and testing data
+#scaler <- scale(X_train)
+
+# Transform the training data
+#X_train_scaled <- scaler
+
+# Transform the testing data using the same scaling parameters
+#X_test_scaled <- scale(X_test, center = attr(scaler, "scaled:center"), scale = attr(scaler, "scaled:scale"))
+
+# Convert the scaled data back to data frames
+#X_train_scaled <- as.data.frame(X_train_scaled)
+#X_test_scaled <- as.data.frame(X_test_scaled)
+
+# Rename the columns to match the original data
+#colnames(X_train_scaled) <- colnames(X_train)
+#colnames(X_test_scaled) <- colnames(X_test)
+
+#X_train <- X_train_scaled 
+#X_test <- X_test_scaled
+
+
+#PRINCIPLE COMPONENT ANALYSIS 
+
+
+# Load the necessary library
+library(stats)
+
+# Perform PCA
+pca_result <- prcomp(X_train, center = TRUE, scale. = TRUE)
+
+# Get the first two principal components
+principalDf <- as.data.frame(pca_result$x[, 1:2])
+colnames(principalDf) <- c('principal component 1', 'principal component 2')
+
+# Display the first 5 rows
+head(principalDf, 5)
+
+
+# Convert y_train to a data frame
+y_train_df <- as.data.frame(y_train)
+colnames(y_train_df) <- 'Charged_Off'
+
+# Combine the principal component data with y_train
+finalDf <- cbind(principalDf, y_train_df)
+
+# Display the first 5 rows
+head(finalDf, 5)
+
+
+
+p <- ggplot(finalDf, aes(x = `principal component 1`, y = `principal component 2`, color = as.factor(Charged_Off))) +
+  geom_point(size = 1, alpha = 0.1) +
+  scale_color_manual(values = c("red", "green"), labels = c("Fully Paid", "Charged Off"), name = "Status") +
+  labs(title = "2 Component PCA",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal()
+
+print(p)
+
+
+explained_variance_ratio <- pca_result$sdev^2 / sum(pca_result$sdev^2)
+explained_variance_ratio
+
+
+#CORRELATION WITH Y_TEST 
+
+
+# Calculate Pearson coefficients for each column in X_train
+cor_values <- sapply(colnames(X_train), function(col) cor(X_train[[col]], y_train, use = "complete.obs"))
+
+# Combine variable names and their correlation values
+linear_corr <- data.frame(variable = names(cor_values), pearson_corr = cor_values)
+
+# Calculate absolute values of the correlation coefficients
+linear_corr$abs_pearson_corr <- abs(linear_corr$pearson_corr)
+
+# Sort by the absolute correlation values
+linear_corr <- linear_corr[order(-linear_corr$abs_pearson_corr), ]
+
+# Drop the absolute correlation column and reset row names
+linear_corr <- linear_corr[, c("variable", "pearson_corr")]
+rownames(linear_corr) <- NULL
+
+# Display the top 10
+head(linear_corr, 10)
+
+tail(linear_corr, 10)
+
+
+#REMOVE ALL ADDRESS RELATED VARIABLES (STATE) 
+
+
+library(dplyr)
+
+# Remove columns that start with "addr"
+X_train <- X_train %>% dplyr::select(-starts_with("addr"))
+
+X_test <- X_test %>% dplyr::select(-starts_with("addr"))
+
+class(y_train)
+class(y_test)
+
+table(y_train)
+table(y_test)
+
+
+
+
+#BALANCING 
+
+data_train_new <- data.frame(y_train, X_train) 
+table(data_train_new$y_train)
+data_test_new <- data.frame(y_test, X_test) 
+table(data_test_new$y_test)
+genData = smotefamily::ADAS(data_train_new[,-1],data_train_new[,1], K=5)
+#genData_2 = ADAS(data_example[,-3],data_example[,3],K=7)
+table(genData$data$class)
+data2_train <- genData$data
+names(data2_train)[names(data2_train) == "class"] <- "Charged_Off"
+#data2_train <- data.table::setDT(data2_train)
+data2_train <- data2_train
+# Create X_train, y_train, X_test, and y_test
+X_train <- data2_train[, !names(data2_train) %in% "Charged_Off"]
+y_train <- data2_train$Charged_Off
+#data2_test <- data.table::setDT(data_test_new)
+data2_test <- data_test_new
+# Create X_train, y_train, X_test, and y_test
+X_test <- data2_test[, !names(data2_test) %in% "y_test"]
+y_test <- data2_test$y_test
+
+y_train <- as.numeric(y_train)
+
+class(y_train)
+class(y_test)
+
+table(y_train)
+table(y_test)
+
+
+table(as.numeric(y_train))
+
+
+
+
+
+#MODELS 
+
+
+#LOGISTIC REGRESSION 
+
+
+# Install and load the necessary libraries
+#install.packages(c("caret", "glmnet"))
+library(caret)
+library(glmnet)
+
+# Set up the train control object for k-fold cross-validation
+set.seed(123) # Replace 'your_random_seed' with your random state value
+kfold <- trainControl(method = "cv", number = 3, verboseIter = TRUE) # Replace 'your_k_value' with the number of folds
+
+# Set up the grid of hyperparameters
+alpha_values <- c(0, 1)  # 0 for lasso ('l1') and 1 for ridge ('l2')
+lambda_values <- c(10**-5, 10**-1, 10**2)
+grid_sgdlr <- expand.grid(alpha = alpha_values, lambda = lambda_values)
+
+
+# Convert y_train to a factor with two levels
+y_train <- as.numeric(factor(y_train, levels = c(2, 1))) - 1
+
+# Convert y_train to a factor and rename the levels
+y_train <- factor(y_train, levels = c(0, 1), labels = c("Class1", "Class0"))
+
+# Adjust trainControl to include classProbs and use twoClassSummary
+kfold <- trainControl(
+  method = "cv", 
+  number = 3, 
+  verboseIter = TRUE, 
+  classProbs = TRUE, 
+  summaryFunction = twoClassSummary
+)
+
+# Train the model
+fit_sgdlr <- train(
+  x = X_train,
+  y = y_train,
+  method = "glmnet",
+  trControl = kfold,
+  tuneGrid = grid_sgdlr,
+  family = "binomial",
+  metric = "ROC"
+)
+
+print(fit_sgdlr)
+
+# Retrieve the best model (equivalent to best_estimator_ in Python)
+sgdlr_estimator <- fit_sgdlr$finalModel
+
+# Print the best ROC score
+cat('Best score: ', max(fit_sgdlr$results$ROC), '\n')
+
+# Print the best parameters set
+best_params <- fit_sgdlr$bestTune
+cat('Best parameters set: \n')
+print(best_params)
+
+
+
+#RANDOM FOREST 
+
+
+
+# Load the necessary libraries
+library(caret)
+library(randomForest)
+
+# Set up the train control object for k-fold cross-validation
+kfold <- trainControl(method = "cv", number = 3, verboseIter = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Define the grid of hyperparameters
+param_grid_rf <- expand.grid(
+  mtry = floor(sqrt(ncol(X_train))) # equivalent to max_features='sqrt' in Python
+)
+
+# Train the model
+fit_rf <- train(
+  x = X_train,
+  y = y_train,
+  method = "rf",
+  trControl = kfold,
+  tuneGrid = param_grid_rf,
+  metric = "ROC",
+  importance = TRUE,
+  ntree = 50, 
+  classwt = c(1, 1)
+)
+
+print(fit_rf)
+
+
+# Retrieve the best model (equivalent to best_estimator_ in Python)
+rf_estimator <- fit_rf$finalModel
+
+# Print the best ROC score
+cat('Best score: ', max(fit_rf$results$ROC), '\n')
+
+# Print the best parameters set
+best_params <- fit_rf$bestTune
+cat('Best parameters set: \n')
+print(best_params)
+
+
+# Extract feature importances from the model
+feature_importances <- rf_estimator$importance
+
+# Sort the importances in descending order
+sorted_importances <- feature_importances[order(-feature_importances[, "MeanDecreaseGini"]), ]
+
+# Display the top 10 features
+cat("Features sorted by their score: Top 10\n")
+head(sorted_importances, 10)
+
+
+# Load the necessary library
+library(ggplot2)
+
+# Normalize the feature importances
+max_importance <- max(sorted_importances[, "MeanDecreaseGini"])
+feature_importance_normalized <- 100.0 * (sorted_importances[, "MeanDecreaseGini"] / max_importance)
+
+# Extract the top 10 features
+top_10 <- head(data.frame(feature = rownames(sorted_importances), importance = feature_importance_normalized), 10)
+
+# Plot the top 10 features
+ggplot(top_10, aes(x = reorder(feature, importance), y = importance)) +
+  geom_bar(stat = "identity", fill = "#7A68A6") +
+  coord_flip() +
+  labs(title = "Variable Importance (Top 10)", x = "Features", y = "Relative Importance") +
+  theme_minimal()
+
+
+
+
+
+#KNN 
+
+
+
+# Load necessary libraries
+library(caret)
+library(kknn)  # for k-nearest neighbor
+library(MASS)  # for LDA
+
+# Set up the train control object for k-fold cross-validation
+kfold <- trainControl(method = "cv", number = 3, verboseIter = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Define KNN model with PCA preprocessing
+#model_knn_pca <- train(
+  #x = X_train,
+  #y = y_train,
+  #method = "kknn",
+  #trControl = kfold,
+  #preProcess = c("pca"),
+  #tuneGrid = expand.grid(k = c(5, 25, 125), .pcaComp = c(3, 9)),
+  #metric = "ROC"
+#)
+
+library(MASS) # For lda function
+
+# Perform LDA transformation
+lda_transform <- lda(y_train ~ ., data = data.frame(X_train, y_train), prior = c(0.5, 0.5))
+X_train_lda <- predict(lda_transform, data.frame(X_train, y_train))$x
+
+# Define the tuning grid for k-NN
+tune_grid_knn <- expand.grid(
+  kmax = c(5, 25, 125),
+  distance = 2, # default Euclidean distance
+  kernel = "rectangular" # default kernel
+)
+
+# Train the k-NN model on LDA-transformed data
+system.time({
+  fit_knn_lda <- train(
+    x = X_train_lda,
+    y = y_train,
+    method = "kknn",
+    trControl = kfold,
+    tuneGrid = tune_grid_knn,
+    metric = "ROC"
+  )
+})
+
+# Print the results
+print(fit_knn_lda)
+
+# Retrieve the best model details
+knn_estimator_lda <- fit_knn_lda$finalModel
+
+# Print the best ROC score
+cat('Best score (ROC):', max(fit_knn_lda$results$ROC), '\n')
+
+# Print the best parameters set
+best_params_lda <- fit_knn_lda$bestTune
+cat('Best parameters set: \n')
+print(best_params_lda)
+
+
+#PLOTTING AUCS
+
+
+# Load the required library
+library(ggplot2)
+
+# Create a data frame with AUROC scores and Algorithm names
+auroc_res <- data.frame(
+  AUROC = c(max(fit_sgdlr$results$ROC), max(fit_rf$results$ROC), max(fit_knn_lda$results$ROC)),
+  Algorithm = c("SGD Logistic Regression", "RandomForest", "KNeighboors")
+)
+
+# Plot the AUROC scores
+ggplot(auroc_res, aes(x = AUROC, y = reorder(Algorithm, AUROC))) +
+  geom_bar(stat = "identity", fill = "cornflowerblue") +
+  labs(title = "Cross validation AUROC scores", x = "ROC_AUC score") +
+  theme_minimal()
+
+
+
+#HYPERPARAMETER FOR LOGISTIC REGRESSION 
+
+# Load necessary libraries
+library(caret)
+library(glmnet) # for logistic regression with L1 and L2 regularization
+
+# Set up the train control object for 5-fold cross-validation
+train_control <- trainControl(method = "cv", number = 5, verboseIter = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Define the model and hyperparameter grid
+alpha_values <- c(0, 1) # 0 for l2 (ridge) and 1 for l1 (lasso) regularization
+lambda_values <- c(10^-5, 10^-3, 10^2) # Corresponds to alpha in scikit-learn's SGDClassifier
+grid_sgdlr_hyper <- expand.grid(alpha = alpha_values, lambda = lambda_values)
+
+# Train the model
+fit_sgdlr_hyper <- train(
+  x = X_train,
+  y = y_train,
+  method = "glmnet",
+  trControl = train_control,
+  tuneGrid = grid_sgdlr_hyper,
+  metric = "ROC",
+  family = "binomial"
+)
+
+# Print results
+print(fit_sgdlr_hyper)
+
+# Retrieve the best model details
+sgdlr_estimator_hyper <- fit_sgdlr_hyper$finalModel
+
+# Print the best ROC score
+cat('Best score (ROC):', max(fit_sgdlr_hyper$results$ROC), '\n')
+
+# Print the best parameters set
+best_params_hyper <- fit_sgdlr_hyper$bestTune
+cat('Best parameters set: \n')
+print(best_params_hyper)
+
+
+#TEST SET 
+
+
+library(pROC) # for roc function
+
+# Predict outcomes and probabilities
+y_pred <- predict(fit_sgdlr_hyper, newdata = X_test)
+y_prob <- predict(fit_sgdlr_hyper, newdata = X_test, type = "prob")[,2]
+
+# Calculate the ROC AUC score
+roc_result <- roc(y_test, y_prob)
+score <- auc(roc_result)
+
+# Print the ROC AUC score
+cat('Logistic Regression roc_auc score:', score, '\n')
+
+
+
+# Convert both vectors to factors
+y_pred_factor <- as.factor(y_pred)
+y_test_factor <- as.factor(y_test)
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Ensure they have the same levels
+levels(y_pred_factor) <- levels(y_test_factor) 
+
+table(y_pred_factor)
+table(y_test_factor)
+
+library(dplyr)
+
+y_pred_factor <- recode(y_pred_factor, "1" = "2", "2" = "1")
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Now, calculate the confusion matrix
+matrix <- confusionMatrix(y_pred_factor, y_test_factor)
+print(matrix)
+
+
+# Print the classification report
+precision <- matrix$byClass["Pos Pred Value"]
+recall <- matrix$byClass["Sensitivity"]
+F1 <- 2 * (precision * recall) / (precision + recall)
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1 Score:", F1, "\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Load necessary libraries
+library(caret)
+library(ROCR)
+library(glmnet)
+
+# Set seed for reproducibility
+set.seed(42)
+
+# Create a logistic regression model
+model <- glmnet(x=X_train, y=y_train, alpha=1, family="binomial")
+
+# Define the grid of hyperparameters
+param_grid <- expand.grid(alpha=1, lambda=c(10^-5, 10^-1, 10^2))
+
+# Create a trainControl object for cross-validation
+ctrl <- trainControl(method="cv", number=3, summaryFunction=twoClassSummary, classProbs=TRUE, verboseIter=TRUE)
+
+# Train the model using cross-validation
+fit <- train(Charged_Off ~ ., data=data2_train, method="glmnet", trControl=ctrl, tuneGrid=param_grid, 
+             metric="ROC")
+
+# Print the results
+print(fit)
+
+# Get the best model
+best_model <- fit$finalModel
+#print(best_model)
+
+# Print the best ROC AUC score and best parameters
+cat("Best ROC AUC:", fit$results$ROC, "\n")
+#cat("Best Parameters:", fit$bestTune, "\n")
+
+yh_xgb=predict(fit, newdata = X_test)
+cm<-confusionMatrix(as.factor(y_test),yh_xgb)
+print(cm)
+ggplot(fit)
+
+
+
+
+
+
+
+
+
+library(randomForest)
+
+# Set seed for reproducibility
+set.seed(42)
+
+
+# Create a Random Forest classifier with specified parameters
+rf <- randomForest(as.factor(y_train) ~ ., data = X_train, ntree = 50, mtry = sqrt(ncol(X_train)), class.weights = c("0" = 1, "1" = 1))
+
+# Print the results of the Random Forest model
+print(rf)
+
+# Predict on the test set
+y_pred <- predict(rf, newdata = X_test)
+
+# Convert factor to numeric
+y_pred_numeric <- as.numeric(as.character(y_pred))
+
+cm<-confusionMatrix(as.factor(data2_test$Charged_Off),as.factor(y_pred))
+cm
+
+# Evaluate the model (ROC AUC)
+roc_obj <- roc(y_test, y_pred_numeric)
+auc_value <- auc(roc_obj)
+cat("ROC AUC:", auc_value, "\n")
+
+
+
+
+
+
+
+
+
+
+
+
+kfold=5
+
+# Define the grid of hyperparameters
+param_grid_rf <- expand.grid(
+  ntree = c(50),  # The number of randomized trees to build
+  .mtry = c(sqrt(ncol(X_train))),  # Number of features to consider for each split
+  class.weights = list("0" = 1, "1" = 1)  # Class weights for balancing
+)
+
+# Create a trainControl object for cross-validation
+ctrl <- trainControl(method = "cv", number = kfold, summaryFunction = twoClassSummary, classProbs = TRUE, verboseIter = TRUE)
+
+# Train the model using cross-validation
+fit <- train(y_train ~ ., data = X_train, method = "rf", trControl = ctrl, tuneGrid = param_grid_rf, metric = "ROC")
+
+# Print the results
+print(fit)
+
+# Get the best model
+best_model <- fit$finalModel
+
+# Print the best ROC AUC score and best parameters
+cat("Best ROC AUC:", fit$results$ROC, "\n")
+cat("Best Parameters:", fit$bestTune, "\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#XGBoost
+start_t<-Sys.time()
+train_control <- caret::trainControl(method = "cv", number = 10, savePredictions = "final")
+xgb_grid = expand.grid(nrounds = c(60,120), max_depth = c(1,9), min_child_weight =1, 
+                       subsample = 1, gamma = 0, colsample_bytree = 0.8, eta = c(.01,.1) )
+xgb.model = train(Charged_Off~., data=data2_train,
+                  method = "xgbTree",
+                  trControl = train_control,
+                  tuneGrid = xgb_grid)
+yh_xgb=predict(xgb.model, newdata = data2_test)
+cm<-confusionMatrix(as.factor(data2_test$Charged_Off),yh_xgb)
+print(cm)
+ggplot(xgb.model)
+results<-c(results,"XGB",cm$overall["Accuracy_xgb"],cm$byClass["Sensitivity_xgb"],
+           cm$byClass["Specificity_xgb"],Sys.time()-start_t)
+
+varImp(xgb.model)
+plot(varImp(xgb.model))
+
+gg<-ggplot(data=varImp(xgb.model), aes(x=Overall, y=yh_xgb,colour="blue")) +
+  geom_bar(stat="identity")
+gg
+
+############################
+
+#knn
+
+train_control <- trainControl(method = "cv", number = 10, savePredictions = "final")
+
+
+knn_grid <- expand.grid(k=c(2:15)) 
+
+
+results<-c() # i'll store the results in this list
+start_t <- Sys.time()
+knn.model <- train(Charged_Off~.,
+                   method = "knn",
+                   data=data2_train,
+                   trControl = train_control,
+                   tuneGrid = knn_grid)
+yhat_knn=predict(knn.model, newdata = data2)
+end_t <- Sys.time()
+
+cm <- confusionMatrix(as.factor(testing$default_num),yhat_knn[-intrain])
+
+results<-c(results,"knn",cm$overall["Accuracy_knn"],cm$byClass["Sensitivity_knn"],
+           cm$byClass["Specificity_knn"],end_t-start_t)
+
+library(caret)
+library(ggplot2)
+
+ggplot(knn.model)
+knn.model$finalModel
+varImp(knn.model)
+plot(varImp(knn.model))
+k<-ggplot(data=varImp(knn.model), aes(x=Overall, y=yhat_knn,colour="blue")) +
+  geom_bar(stat="identity")
+k
+
+######################################################
+#randomforest
+
+# define a grid of parameter options to try with ranger
+rf_grid <- expand.grid(mtry = c(3:6),
+                       splitrule = "gini",   #or variance
+                       min.node.size = c(2,4))
+rf_grid
+#rf_grid fit the model with the parameter grid
+
+x=training[,c("installment", "annual_inc", "total_pymnt",
+              "funded_amnt", "loan_amnt", "int_rate" ,"total_acc", "recoveries", "last_pymnt_amnt",
+              "term", "emp_length", "grade", "home_ownership", "purpose", "revol_bal", "verification_status",
+              "delinq_2yrs", "share", "fico_avg", "loan_to_total")]
+y=as.factor(training$default_num)
+
+#RF Model
+library(ranger)
+start_t <- Sys.time()
+rf.model <- train(x = x,y = y,
+                  method = "ranger",
+                  trControl = train_control,
+                  tuneGrid = rf_grid,
+                  importance= "impurity") #or impurity_corrected, or permutation for continuous y
+yhat_rf=predict(rf.model, newdata = data2)
+#yhat_rf[-intrain]
+cm<-confusionMatrix(as.factor(testing$default_num),yhat_rf[-intrain])
+results<-c(results,"rf",cm$overall["Accuracy_rf"],cm$byClass["Sensitivity_rf"],
+           cm$byClass["Specificity_rf"],Sys.time()-start_t)
+results
+ggplot(rf.model)
+
+varImp(rf.model)
+
+r<-ggplot(data=varImp(rf.model), aes(x=Overall, y=yhat_rf,colour="blue")) +
+  geom_bar(stat="identity")
+r
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# model = lrm(Charged_Off ~ ., data2)
+
+library(neuralnet)
+set.seed(7896129)
+
+data_train_new <- data.frame(y_train, X_train_scaled) 
+data_train_new <- dplyr::sample_n(data_train_new, size=1000)
+
+nmodel <- neuralnet(y_train ~ .,data=data_train_new,hidden=1,
+                    threshold = 0.01,
+                    learningrate.limit = NULL,
+                    learningrate.factor =
+                      list(minus = 0.5, plus = 1.2),
+                    algorithm = "rprop+")
+
+n <- neuralnet(y_train ~ .,
+               data = data_train_new,
+               hidden = 5,
+               err.fct = "ce",
+               linear.output = FALSE,
+               lifesign = 'full',
+               rep = 2,
+               algorithm = "rprop+",
+               stepmax = 100000)
+
+plot(n, rep = 1)
+
+# Prediction
+output <- compute(n, rep = 1, data_train_new[, -1])
+head(output$net.result)
+
+head(data_train_new[1, ])
+
+# confusion Matrix $Misclassification error -Training data
+output <- compute(n, rep = 1, data_train_new[, -1])
+p1 <- output$net.result
+pred1 <- ifelse(p1 > 0.5, 1, 0)
+tab1 <- table(pred1[,1], data_train_new$y_train)
+tab1
+
+
+
+genData = smotefamily::ADAS(data_train_new[,-1],data_train_new[,1], K=5)
+#genData_2 = ADAS(data_example[,-3],data_example[,3],K=7)
+
+table(genData$data$class)
+
+
+
+
+newdata <- genData$data
+
+nmodel <- neuralnet(class ~ .,data=newdata,hidden=1,
+                    threshold = 0.01,
+                    learningrate.limit = NULL,
+                    learningrate.factor =
+                      list(minus = 0.5, plus = 1.2),
+                    algorithm = "rprop+")
+
+n <- neuralnet(class ~ .,
+               data = newdata,
+               hidden = 5,
+               err.fct = "ce",
+               linear.output = FALSE,
+               lifesign = 'full',
+               rep = 2,
+               algorithm = "rprop+",
+               stepmax = 100000)
+
+plot(n, rep = 1)
+
+# Prediction
+output <- compute(n, rep = 1, newdata[, -122])
+head(output$net.result)
+
+head(newdata[1, ])
+
+# confusion Matrix $Misclassification error -Training data
+output <- compute(n, rep = 1, newdata[, -122])
+p1 <- output$net.result
+pred1 <- ifelse(p1 > 0.5, 1, 0)
+tab1 <- table(pred1[,1], newdata$class)
+tab1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+svm1 = svm(as.factor(class)~.,
+           data = newdata,
+           kernel = "radial",
+           cost = 1,
+           gamma = 1)
+svm1
+
+#predictions
+pred_svm1 = predict(svm1, newdata=newdata)
+#svm1 is a vector
+#matrix
+table(pred_svm1, newdata$class)
+
+
+
+
+
+
+
+
