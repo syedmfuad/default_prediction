@@ -1,1 +1,482 @@
 
+library(xgboost)
+library(randomForest)
+library(kknn)
+library(e1071)
+library(nnet)
+library(caret)
+
+table(y_train)
+table(y_test)
+
+class(y_train)
+class(y_test)
+
+y_train <- as.factor(y_train)
+y_test <- as.factor(y_test)
+
+# Convert y_train to a factor with two levels
+y_train <- as.numeric(factor(y_train, levels = c(2, 1))) - 1
+
+y_test <- as.numeric(factor(y_test, levels = c(2, 1))) - 1
+
+# Convert y_train to a factor and rename the levels
+y_train <- factor(y_train, levels = c(0, 1), labels = c("Class1", "Class0"))
+
+y_test <- factor(y_test, levels = c(0, 1), labels = c("Class1", "Class0"))
+
+#saving for future 
+
+y_train_save <- y_train
+y_test_save <- y_test
+
+X_train_save <- X_train
+X_test_save <- X_test
+
+#careful - reassigning if wrong 
+
+y_train <- y_train_save
+y_test <- y_test_save
+
+X_train <- X_train_save
+X_test <- X_test_save
+
+
+#LOGIT 
+
+
+# Set up the train control object for k-fold cross-validation
+set.seed(123) 
+
+library(caret)
+library(glmnet) # for logistic regression with L1 and L2 regularization
+
+# Set up the train control object for 5-fold cross-validation
+train_control <- trainControl(method = "cv", number = 5, verboseIter = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Define the model and hyperparameter grid
+alpha_values <- c(0, 0.5, 1) # 0 for l2 (ridge) and 1 for l1 (lasso) regularization
+lambda_values <- c(10^-6, 10^-5, 10^-4, 10^-3, 10^-2, 10^-1, 1, 10, 10^2) # Corresponds to alpha in scikit-learn's SGDClassifier
+grid_sgdlr_hyper <- expand.grid(alpha = alpha_values, lambda = lambda_values)
+
+# Train the model
+fit_sgdlr_hyper <- train(
+  x = X_train,
+  y = y_train,
+  method = "glmnet",
+  trControl = train_control,
+  tuneGrid = grid_sgdlr_hyper,
+  metric = "ROC",
+  family = "binomial"
+)
+
+# Print results
+print(fit_sgdlr_hyper)
+
+# Retrieve the best model details
+sgdlr_estimator_hyper <- fit_sgdlr_hyper$finalModel
+
+# Print the best ROC score
+cat('Best score (ROC):', max(fit_sgdlr_hyper$results$ROC), '\n')
+
+# Print the best parameters set
+best_params_hyper <- fit_sgdlr_hyper$bestTune
+cat('Best parameters set: \n')
+print(best_params_hyper)
+
+
+#VALIDATION 
+
+
+library(pROC) # for roc function
+
+# Predict outcomes and probabilities
+y_pred <- predict(fit_sgdlr_hyper, newdata = X_test)
+y_prob <- predict(fit_sgdlr_hyper, newdata = X_test, type = "prob")[,2]
+
+# Calculate the ROC AUC score
+roc_result <- roc(y_test, y_prob)
+score <- auc(roc_result)
+
+# Print the ROC AUC score
+cat('Logistic Regression roc_auc score:', score, '\n')
+
+# Convert both vectors to factors
+y_pred_factor <- as.factor(y_pred)
+y_test_factor <- as.factor(y_test)
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Ensure they have the same levels
+levels(y_pred_factor) <- levels(y_test_factor) 
+
+table(y_pred_factor)
+table(y_test_factor)
+
+library(dplyr)
+
+y_pred_factor <- recode(y_pred_factor, "1" = "2", "2" = "1")
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Now, calculate the confusion matrix
+matrix <- confusionMatrix(y_pred_factor, y_test_factor)
+print(matrix)
+
+# Print the classification report
+precision <- matrix$byClass["Pos Pred Value"]
+recall <- matrix$byClass["Sensitivity"]
+F1 <- 2 * (precision * recall) / (precision + recall)
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1 Score:", F1, "\n")
+
+
+# XGB 
+
+
+library(caret)
+library(xgboost)
+
+# Set up the train control object for k-fold cross-validation
+kfold <- trainControl(method = "cv", number = 5, verboseIter = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Define the grid of hyperparameters for XGB
+param_grid_xgb <- expand.grid(
+  nrounds = c(100, 200), #100 
+  max_depth = c(3, 6, 9), #9
+  eta = c(0.01, 0.1), # 0.1
+  gamma = c(0, 1), #0 
+  colsample_bytree = c(0.6, 0.8, 1), #0.8
+  min_child_weight = c(1, 5), #1
+  subsample = c(0.7, 1) #1
+)
+
+# Train the XGB model
+fit_xgb <- train(
+  x = X_train,
+  y = y_train,
+  method = "xgbTree",
+  trControl = kfold,
+  tuneGrid = param_grid_xgb,
+  metric = "ROC"
+)
+
+print(fit_xgb)
+
+# Retrieve the best model (equivalent to best_estimator_ in Python)
+xgb_estimator <- fit_xgb$finalModel
+
+# Print the best ROC score
+cat('Best score: ', max(fit_xgb$results$ROC), '\n')
+
+# Print the best parameters set
+best_params <- fit_xgb$bestTune
+cat('Best parameters set: \n')
+print(best_params)
+
+# Extract feature importances from the model
+feature_importances <- xgb.importance(model = xgb_estimator)
+print(feature_importances)
+
+# Retrieve the best model details
+xgb_estimator_hyper <- fit_xgb$finalModel
+
+# Print the best ROC score
+cat('Best score (ROC):', max(fit_xgb$results$ROC), '\n')
+
+# Print the best parameters set
+best_params_hyper <- fit_xgb$bestTune
+cat('Best parameters set: \n')
+print(best_params_hyper)
+
+#VALIDATION  
+
+library(pROC) # for roc function
+
+# Predict outcomes and probabilities
+y_pred <- predict(fit_xgb, newdata = X_test)
+y_prob <- predict(fit_xgb, newdata = X_test, type = "prob")[,2]
+
+# Calculate the ROC AUC score
+roc_result <- roc(y_test, y_prob)
+score <- auc(roc_result)
+
+# Print the ROC AUC score
+cat('Logistic Regression roc_auc score:', score, '\n')
+
+# Convert both vectors to factors
+y_pred_factor <- as.factor(y_pred)
+y_test_factor <- as.factor(y_test)
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Ensure they have the same levels
+levels(y_pred_factor) <- levels(y_test_factor) 
+
+table(y_pred_factor)
+table(y_test_factor)
+
+library(dplyr)
+
+y_pred_factor <- recode(y_pred_factor, "1" = "2", "2" = "1")
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Now, calculate the confusion matrix
+matrix <- confusionMatrix(y_pred_factor, y_test_factor)
+print(matrix)
+
+# Print the classification report
+precision <- matrix$byClass["Pos Pred Value"]
+recall <- matrix$byClass["Sensitivity"]
+F1 <- 2 * (precision * recall) / (precision + recall)
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1 Score:", F1, "\n")
+
+
+
+
+
+
+
+
+#RANDOM FOREST 
+
+# Load the necessary libraries
+library(caret)
+library(randomForest)
+
+# Set up the train control object for k-fold cross-validation
+kfold <- trainControl(method = "cv", number = 3, verboseIter = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Define the grid of hyperparameters for Random Forest
+# Here, we're tuning `mtry` (number of variables randomly sampled as candidates at each split)
+param_grid_rf <- expand.grid(
+  mtry = c(floor(sqrt(ncol(X_train))), floor(sqrt(ncol(X_train)))*1.5) # Different values for mtry
+)
+
+# Define the grid of hyperparameters
+param_grid_rf <- expand.grid(
+  mtry = c(floor(sqrt(ncol(X_train))), floor(ncol(X_train)/2), ncol(X_train)) # Different values for mtry
+)
+
+# Train the model with parameter tuning
+fit_rf <- train(
+  x = X_train,
+  y = y_train,
+  method = "rf",
+  trControl = kfold,
+  tuneGrid = param_grid_rf,
+  metric = "ROC",
+  importance = TRUE,
+  ntree = 50, 
+  classwt = c(1, 1)
+)
+
+print(fit_rf)
+
+# Retrieve the best model (equivalent to best_estimator_ in Python)
+rf_estimator <- fit_rf$finalModel
+
+# Print the best ROC score
+cat('Best score: ', max(fit_rf$results$ROC), '\n')
+
+# Print the best parameters set
+best_params <- fit_rf$bestTune
+cat('Best parameters set: \n')
+print(best_params)
+
+# Extract feature importances from the model
+feature_importances <- rf_estimator$importance
+
+# Sort the importances in descending order
+sorted_importances <- feature_importances[order(-feature_importances[, "MeanDecreaseGini"]), ]
+
+# Display the top 10 features
+cat("Features sorted by their score: Top 10\n")
+head(sorted_importances, 10)
+
+# Retrieve the best model details
+rf_estimator_hyper <- fit_rf$finalModel
+
+# Print the best ROC score
+cat('Best score (ROC):', max(fit_rf$results$ROC), '\n')
+
+# Print the best parameters set
+best_params_hyper <- fit_rf$bestTune
+cat('Best parameters set: \n')
+print(best_params_hyper)
+
+#mtry  ROC        Sens       Spec     
+#8    0.9532922  0.8477700  0.9231901
+#12    0.9559732  0.8518429  0.9285767
+
+#TEST SET 
+
+library(pROC) # for roc function
+
+# Predict outcomes and probabilities
+y_pred <- predict(fit_rf, newdata = X_test)
+y_prob <- predict(fit_rf, newdata = X_test, type = "prob")[,2]
+
+# Calculate the ROC AUC score
+roc_result <- roc(y_test, y_prob)
+score <- auc(roc_result)
+
+# Print the ROC AUC score
+cat('Logistic Regression roc_auc score:', score, '\n')
+
+# Convert both vectors to factors
+y_pred_factor <- as.factor(y_pred)
+y_test_factor <- as.factor(y_test)
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Ensure they have the same levels
+levels(y_pred_factor) <- levels(y_test_factor) 
+
+table(y_pred_factor)
+table(y_test_factor)
+
+library(dplyr)
+
+y_pred_factor <- recode(y_pred_factor, "1" = "2", "2" = "1")
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Now, calculate the confusion matrix
+matrix <- confusionMatrix(y_pred_factor, y_test_factor)
+print(matrix)
+
+# Print the classification report
+precision <- matrix$byClass["Pos Pred Value"]
+recall <- matrix$byClass["Sensitivity"]
+F1 <- 2 * (precision * recall) / (precision + recall)
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1 Score:", F1, "\n")
+
+
+
+
+
+
+
+#KNN 
+
+# Load necessary libraries
+library(caret)
+library(kknn)  # for k-nearest neighbor
+library(MASS)  # for LDA
+
+# Set up the train control object for k-fold cross-validation
+kfold <- trainControl(method = "cv", number = 5, verboseIter = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+library(MASS) # For lda function
+
+# Perform LDA transformation
+lda_transform <- lda(y_train ~ ., data = data.frame(X_train, y_train), prior = c(0.5, 0.5))
+X_train_lda <- predict(lda_transform, data.frame(X_train, y_train))$x
+
+# Define the tuning grid for k-NN
+tune_grid_knn <- expand.grid(
+  kmax = c(5, 25, 125),
+  distance = 2, # default Euclidean distance
+  kernel = "rectangular" # default kernel
+)
+
+# Train the k-NN model on LDA-transformed data
+system.time({
+  fit_knn_lda <- train(
+    x = X_train_lda,
+    y = y_train,
+    method = "kknn",
+    trControl = kfold,
+    tuneGrid = tune_grid_knn,
+    metric = "ROC"
+  )
+})
+
+# Print the results
+print(fit_knn_lda)
+
+# Retrieve the best model details
+knn_estimator_lda <- fit_knn_lda$finalModel
+
+# Print the best ROC score
+cat('Best score (ROC):', max(fit_knn_lda$results$ROC), '\n')
+
+# Print the best parameters set
+best_params_lda <- fit_knn_lda$bestTune
+cat('Best parameters set: \n')
+print(best_params_lda)
+
+#   kmax distance      kernel
+#3  125        2 rectangular
+
+#TEST SET 
+
+library(pROC) # for roc function
+
+# Transform the test data using the same LDA model
+X_test_lda <- predict(lda_transform, data.frame(X_test, y_test))$x
+
+# Predict outcomes and probabilities
+y_pred <- predict(fit_knn_lda, newdata = X_test_lda)
+y_prob <- predict(fit_knn_lda, newdata = X_test_lda, type = "prob")[,2]
+
+# Calculate the ROC AUC score
+roc_result <- roc(y_test, y_prob)
+score <- auc(roc_result)
+
+# Print the ROC AUC score
+cat('Logistic Regression roc_auc score:', score, '\n')
+
+# Convert both vectors to factors
+y_pred_factor <- as.factor(y_pred)
+y_test_factor <- as.factor(y_test)
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Ensure they have the same levels
+levels(y_pred_factor) <- levels(y_test_factor) 
+
+table(y_pred_factor)
+table(y_test_factor)
+
+library(dplyr)
+
+y_pred_factor <- recode(y_pred_factor, "1" = "2", "2" = "1")
+
+table(y_pred_factor)
+table(y_test_factor)
+
+# Now, calculate the confusion matrix
+matrix <- confusionMatrix(y_pred_factor, y_test_factor)
+print(matrix)
+
+# Print the classification report
+precision <- matrix$byClass["Pos Pred Value"]
+recall <- matrix$byClass["Sensitivity"]
+F1 <- 2 * (precision * recall) / (precision + recall)
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1 Score:", F1, "\n")
+
+
+
+
+
+
+
+
+
