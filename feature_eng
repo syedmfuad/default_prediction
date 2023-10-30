@@ -151,7 +151,6 @@ linear_corr
 #CREATE DUMMIES FROM CATEGORICAL VARIABLES 
 
 
-#create dummies for categorical variables 
 dummy_list <- c('sub_grade', 'home_ownership', 'verification_status', 'purpose', 'addr_state', 'initial_list_status', 'application_type')
 
 dummy_vars <- dummyVars(~ ., data = data2[, dummy_list], levelsOnly = TRUE)
@@ -181,7 +180,8 @@ data2$`verification_statusSource Verified`<- NULL
 #TEST AND TRAIN DATA 
 
 
-#train and test by date 
+#FIRST OPTION: SPLIT DATA BY DATE (USE EARLIER DATA TO PREDICT LATTER) 
+
 
 # Convert 'issue_d' to numeric (days since a reference date)
 data2$date_numeric <- as.numeric(data2$date - min(data2$date))
@@ -205,39 +205,35 @@ table(data2_train$Charged_Off)
 table(data2_test$Charged_Off)
 
 
+##SECOND OPTION: RANDOMLY SPLIT DATA 
 
-
-
-
-
-#train and test randomly 
 
 ## 75% of the sample size
-smp_size <- floor(0.80 * nrow(data2))
-## set the seed to make your partition reproducible
+smp_size <- floor(0.75 * nrow(data2))
+
 set.seed(123)
+
 train_ind <- sample(seq_len(nrow(data2)), size = smp_size)
 data2_train <- data2[train_ind, ]
 data2_test <- data2[-train_ind, ]
+
 # Calculate the number of loans in each partition
 total_loans <- nrow(data2_train) + nrow(data2_test)
 total_loans_in_full_dataset <- nrow(data2)
-# Print the results
+
 cat("Number of loans in the partition:", total_loans, "\n")
 cat("Number of loans in the full dataset:", total_loans_in_full_dataset, "\n")
+
 table(data2_train$Charged_Off)
 table(data2_test$Charged_Off)
 
 
+#DROP DATE 
 
-
-
-# Drop the 'issue_d' column
 
 data2 <- data2[, !names(data2) %in% "date"]
 
 data2 <- data2[, !names(data2) %in% "date_numeric"]
-
 
 data2_train <- data2_train[, !names(data2_train) %in% "date"]
 data2_test <- data2_test[, !names(data2_test) %in% "date"]
@@ -274,11 +270,6 @@ X_test <- as.data.frame(scaled_test)
 # Set column names 
 colnames(X_train) <- colnames(X_test) <- original_column_names
 
-
-
-
-
-
 # Train the StandardScaler on the training features and apply it to both training and testing data
 #scaler <- scale(X_train)
 
@@ -300,10 +291,9 @@ colnames(X_train) <- colnames(X_test) <- original_column_names
 #X_test <- X_test_scaled
 
 
-#PRINCIPLE COMPONENT ANALYSIS 
+#PRINCIPAL COMPONENT ANALYSIS 
 
 
-# Load the necessary library
 library(stats)
 
 # Perform PCA
@@ -431,7 +421,6 @@ table(as.numeric(y_train))
 #LOGISTIC REGRESSION 
 
 
-# Install and load the necessary libraries
 #install.packages(c("caret", "glmnet"))
 library(caret)
 library(glmnet)
@@ -490,8 +479,6 @@ print(best_params)
 #RANDOM FOREST 
 
 
-
-# Load the necessary libraries
 library(caret)
 library(randomForest)
 
@@ -542,7 +529,6 @@ cat("Features sorted by their score: Top 10\n")
 head(sorted_importances, 10)
 
 
-# Load the necessary library
 library(ggplot2)
 
 # Normalize the feature importances
@@ -567,7 +553,6 @@ ggplot(top_10, aes(x = reorder(feature, importance), y = importance)) +
 
 
 
-# Load necessary libraries
 library(caret)
 library(kknn)  # for k-nearest neighbor
 library(MASS)  # for LDA
@@ -629,7 +614,6 @@ print(best_params_lda)
 #PLOTTING AUCS
 
 
-# Load the required library
 library(ggplot2)
 
 # Create a data frame with AUROC scores and Algorithm names
@@ -648,7 +632,6 @@ ggplot(auroc_res, aes(x = AUROC, y = reorder(Algorithm, AUROC))) +
 
 #HYPERPARAMETER FOR LOGISTIC REGRESSION 
 
-# Load necessary libraries
 library(caret)
 library(glmnet) # for logistic regression with L1 and L2 regularization
 
@@ -749,12 +732,10 @@ cat("F1 Score:", F1, "\n")
 
 
 
-# Load necessary libraries
 library(caret)
 library(ROCR)
 library(glmnet)
 
-# Set seed for reproducibility
 set.seed(42)
 
 # Create a logistic regression model
@@ -796,7 +777,6 @@ ggplot(fit)
 
 library(randomForest)
 
-# Set seed for reproducibility
 set.seed(42)
 
 
