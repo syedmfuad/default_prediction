@@ -192,7 +192,9 @@ best_params_hyper <- fit_xgb$bestTune
 cat('Best parameters set: \n')
 print(best_params_hyper)
 
+
 #VALIDATION  
+
 
 library(pROC) # for roc function
 
@@ -240,15 +242,9 @@ cat("Recall:", recall, "\n")
 cat("F1 Score:", F1, "\n")
 
 
+#RF 
 
 
-
-
-
-
-#RANDOM FOREST 
-
-# Load the necessary libraries
 library(caret)
 library(randomForest)
 
@@ -258,7 +254,7 @@ kfold <- trainControl(method = "cv", number = 3, verboseIter = TRUE, classProbs 
 # Define the grid of hyperparameters for Random Forest
 # Here, we're tuning `mtry` (number of variables randomly sampled as candidates at each split)
 param_grid_rf <- expand.grid(
-  mtry = c(floor(sqrt(ncol(X_train))), floor(sqrt(ncol(X_train)))*1.5) # Different values for mtry
+  mtry = c(floor(sqrt(ncol(X_train))), floor(sqrt(ncol(X_train)))*1.5) # Different values for mtry #12
 )
 
 # Define the grid of hyperparameters
@@ -313,11 +309,9 @@ best_params_hyper <- fit_rf$bestTune
 cat('Best parameters set: \n')
 print(best_params_hyper)
 
-#mtry  ROC        Sens       Spec     
-#8    0.9532922  0.8477700  0.9231901
-#12    0.9559732  0.8518429  0.9285767
 
-#TEST SET 
+#VALIDATION 
+
 
 library(pROC) # for roc function
 
@@ -365,14 +359,9 @@ cat("Recall:", recall, "\n")
 cat("F1 Score:", F1, "\n")
 
 
-
-
-
-
-
 #KNN 
 
-# Load necessary libraries
+
 library(caret)
 library(kknn)  # for k-nearest neighbor
 library(MASS)  # for LDA
@@ -388,7 +377,7 @@ X_train_lda <- predict(lda_transform, data.frame(X_train, y_train))$x
 
 # Define the tuning grid for k-NN
 tune_grid_knn <- expand.grid(
-  kmax = c(5, 25, 125),
+  kmax = c(5, 25, 125), #125
   distance = 2, # default Euclidean distance
   kernel = "rectangular" # default kernel
 )
@@ -419,10 +408,9 @@ best_params_lda <- fit_knn_lda$bestTune
 cat('Best parameters set: \n')
 print(best_params_lda)
 
-#   kmax distance      kernel
-#3  125        2 rectangular
 
-#TEST SET 
+#VALIDATION 
+
 
 library(pROC) # for roc function
 
@@ -471,8 +459,6 @@ F1 <- 2 * (precision * recall) / (precision + recall)
 cat("Precision:", precision, "\n")
 cat("Recall:", recall, "\n")
 cat("F1 Score:", F1, "\n")
-
-
 
 
 
