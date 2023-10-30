@@ -303,9 +303,7 @@ pca_result <- prcomp(X_train, center = TRUE, scale. = TRUE)
 principalDf <- as.data.frame(pca_result$x[, 1:2])
 colnames(principalDf) <- c('principal component 1', 'principal component 2')
 
-# Display the first 5 rows
 head(principalDf, 5)
-
 
 # Convert y_train to a data frame
 y_train_df <- as.data.frame(y_train)
@@ -314,10 +312,7 @@ colnames(y_train_df) <- 'Charged_Off'
 # Combine the principal component data with y_train
 finalDf <- cbind(principalDf, y_train_df)
 
-# Display the first 5 rows
 head(finalDf, 5)
-
-
 
 p <- ggplot(finalDf, aes(x = `principal component 1`, y = `principal component 2`, color = as.factor(Charged_Off))) +
   geom_point(size = 1, alpha = 0.1) +
@@ -329,12 +324,11 @@ p <- ggplot(finalDf, aes(x = `principal component 1`, y = `principal component 2
 
 print(p)
 
-
 explained_variance_ratio <- pca_result$sdev^2 / sum(pca_result$sdev^2)
 explained_variance_ratio
 
 
-#CORRELATION WITH Y_TEST 
+#CORRELATION WITH Y_TEST (CHEATING!!) 
 
 
 # Calculate Pearson coefficients for each column in X_train
@@ -353,7 +347,6 @@ linear_corr <- linear_corr[order(-linear_corr$abs_pearson_corr), ]
 linear_corr <- linear_corr[, c("variable", "pearson_corr")]
 rownames(linear_corr) <- NULL
 
-# Display the top 10
 head(linear_corr, 10)
 
 tail(linear_corr, 10)
@@ -364,7 +357,7 @@ tail(linear_corr, 10)
 
 library(dplyr)
 
-# Remove columns that start with "addr"
+# Remove columns that start with "addr" 
 X_train <- X_train %>% dplyr::select(-starts_with("addr"))
 
 X_test <- X_test %>% dplyr::select(-starts_with("addr"))
@@ -376,26 +369,33 @@ table(y_train)
 table(y_test)
 
 
-
-
 #BALANCING 
 
+
 data_train_new <- data.frame(y_train, X_train) 
+
 table(data_train_new$y_train)
+
 data_test_new <- data.frame(y_test, X_test) 
+
 table(data_test_new$y_test)
+
 genData = smotefamily::ADAS(data_train_new[,-1],data_train_new[,1], K=5)
-#genData_2 = ADAS(data_example[,-3],data_example[,3],K=7)
+
 table(genData$data$class)
+
 data2_train <- genData$data
+
 names(data2_train)[names(data2_train) == "class"] <- "Charged_Off"
-#data2_train <- data.table::setDT(data2_train)
+
 data2_train <- data2_train
+
 # Create X_train, y_train, X_test, and y_test
 X_train <- data2_train[, !names(data2_train) %in% "Charged_Off"]
 y_train <- data2_train$Charged_Off
-#data2_test <- data.table::setDT(data_test_new)
+
 data2_test <- data_test_new
+
 # Create X_train, y_train, X_test, and y_test
 X_test <- data2_test[, !names(data2_test) %in% "y_test"]
 y_test <- data2_test$y_test
@@ -407,12 +407,6 @@ class(y_test)
 
 table(y_train)
 table(y_test)
-
-
-table(as.numeric(y_train))
-
-
-
 
 
 #MODELS 
@@ -524,7 +518,6 @@ feature_importances <- rf_estimator$importance
 # Sort the importances in descending order
 sorted_importances <- feature_importances[order(-feature_importances[, "MeanDecreaseGini"]), ]
 
-# Display the top 10 features
 cat("Features sorted by their score: Top 10\n")
 head(sorted_importances, 10)
 
